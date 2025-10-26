@@ -1176,7 +1176,7 @@ if __name__ == "__main__":
             lr=5e-4,
             # NEW API batch parameters
             train_batch_size_per_learner=3072,         # ✅ NEW API: per-learner batch size
-            mini_batch_size_per_learner=1024,          # ✅ NEW API: mini_batch (note underscore!)
+            minibatch_size_per_learner=1024,           # ✅ NEW API: minibatch (NO underscore!)
             num_epochs=3,                              # ✅ NEW API: num_epochs
             vf_clip_param=50.0,
             use_gae=True,
