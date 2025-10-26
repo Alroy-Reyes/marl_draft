@@ -439,10 +439,8 @@ try:
 except:
     pass
 
-# Register the improved model
-# ModelCatalog.register_custom_model("improved_saha_masked", ImprovedSahaMaskedTwoHead)
-# NOTE: Custom model registration not needed with NEW API (RLModule)
-# The NEW API uses default PPO RLModule with fcnet_hiddens configuration
+# Register the improved model (needed for OLD API)
+ModelCatalog.register_custom_model("improved_saha_masked", ImprovedSahaMaskedTwoHead)
 print("✅ Model 'improved_saha_masked' registered\n")
 
 
@@ -1123,22 +1121,26 @@ if __name__ == "__main__":
     # ✅ 24GB RAM: Can run 2-3 envs per worker
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.2 - M4 Pro with NEW API):
-    # - 6 env_runners: Leverage M4 Pro's multi-core performance (conservative start)
-    # - 1 env per runner: 6 parallel environments total (stable)
+    # OPTIMIZATIONS APPLIED (v19.3 - M4 Pro with OLD API - STABLE):
+    # - 6 rollout_workers: Leverage M4 Pro's multi-core performance
+    # - 1 env per worker: 6 parallel environments total (stable)
     # - Larger fragments (128): Efficient data collection
     # - Batch size 3072: Large batch for stable gradients
     # - Minibatch 1024: Balanced for CPU training (no GPU on M4)
     #
-    # RAY 2.50+ NEW API (Modern Approach):
-    # - ✅ NEW env_runner API (enable_env_runner_and_connector_v2=True)
-    #   * .env_runners() method
-    #   * num_env_runners, num_envs_per_env_runner
-    #   * minibatch_size, num_epochs (NEW training param names!)
-    # - ❌ OLD learner API (enable_rl_module_and_learner=False)
-    #   * Keep our custom TorchModelV2 model (no RLModule rewrite needed)
-    #   * But MUST use NEW training param names (minibatch_size, num_epochs)
-    #   * NEW env_runner API requires NEW training names!
+    # WHY OLD API (not NEW API):
+    # - NEW API requires RLModule (can't use our custom TorchModelV2)
+    # - Our environment has Dict observation space with action masks
+    # - Default RLModule doesn't support Dict obs or action masking
+    # - Would need custom RLModule implementation (6-8 hours work)
+    # - OLD API works perfectly with our custom model RIGHT NOW
+    #
+    # RAY 2.50+ OLD API (Proven & Stable):
+    # - .rollouts() method (not .env_runners())
+    # - num_rollout_workers, num_envs_per_worker
+    # - train_batch_size, sgd_minibatch_size, num_sgd_iter
+    # - Custom TorchModelV2 with action masking support
+    # - Multi-head architecture (teacher + slot selection)
     #
     # EXPECTED PERFORMANCE:
     # - Total speedup: 20-30x faster than original baseline! 🚀🚀
@@ -1151,14 +1153,15 @@ if __name__ == "__main__":
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
     # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup)
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.1 (M4 Pro, OLD API): 30-50s/iter, 6 workers = 50-85 mins (20-30x)
-    # - v19.2 (M4 Pro, NEW API): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
+    # - v19.1 (M4 Pro, OLD API first try): 30-50s/iter, 6 workers = 50-85 mins (20-30x)
+    # - v19.2 (M4 Pro, NEW API attempt): Failed (Dict obs incompatible)
+    # - v19.3 (M4 Pro, OLD API final): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
         .api_stack(
-            enable_rl_module_and_learner=True,          # ✅ NEW API (full stack)
-            enable_env_runner_and_connector_v2=True,    # ✅ NEW API (env runners)
+            enable_rl_module_and_learner=False,         # ✅ OLD API (our custom model)
+            enable_env_runner_and_connector_v2=False,   # ✅ OLD API (compatible)
         )
         .environment(
             env="manila_env",
@@ -1166,17 +1169,22 @@ if __name__ == "__main__":
             disable_env_checking=True
         )
         .framework("torch")
-        .env_runners(                           # ✅ NEW API: env_runners() method
-            num_env_runners=6,                  # ✅ NEW API: num_env_runners (M4 Pro: 6 workers)
-            num_envs_per_env_runner=1,          # ✅ NEW API: num_envs_per_env_runner
-            rollout_fragment_length=128,        # ✅ Larger fragments for efficient collection
+        .rollouts(                              # ✅ OLD API: rollouts() method
+            num_rollout_workers=6,              # ✅ 6 workers (M4 Pro optimized)
+            num_envs_per_worker=1,              # ✅ 1 env per worker (stable)
+            rollout_fragment_length=128,        # ✅ Larger fragments
+            batch_mode="truncate_episodes",     # ✅ Fast iteration
         )
         .training(
-            # NEW API: batch params configured elsewhere (in base config)
+            gamma=0.95,
+            lr=5e-4,
+            train_batch_size=3072,              # ✅ 6 workers × 128 × 4 = 3072
+            sgd_minibatch_size=1024,            # ✅ Large minibatch for M4 Pro
+            num_sgd_iter=3,                     # ✅ 3072 / 1024 = 3
+            vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
             clip_param=0.3,
-            vf_clip_param=50.0,
             entropy_coeff=0.5,
             grad_clip=1.0,
             kl_coeff=0.1,
@@ -1185,28 +1193,13 @@ if __name__ == "__main__":
         )
         .resources(
             num_gpus=0,
-            # num_learners not available in this Ray version
-        )
-        .rl_module(
-            model_config={
-                "fcnet_hiddens": [512, 512, 256],
-                "use_lstm": False,
-            }
         )
         .multi_agent(
-            policies={"saha_policy"},           # NEW API: just policy IDs
+            policies=policies,                   # ✅ OLD API: policies dict
             policy_mapping_fn=policy_mapping_fn,
         )
         .callbacks(EnhancedValidationCallback)
-        .experimental(_validate_config=False)   # Disable strict validation for multi-agent
     )
-
-    # NEW API: Set batch parameters as properties (not in .training())
-    ppo_cfg.train_batch_size = 3072
-    ppo_cfg.sgd_minibatch_size = 1024
-    ppo_cfg.num_sgd_iter = 3
-    ppo_cfg.lr = 5e-4
-    ppo_cfg.gamma = 0.95
 
     config = ppo_cfg.to_dict()
     
