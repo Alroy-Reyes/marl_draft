@@ -147,9 +147,7 @@ else:
 os.makedirs(SPILL_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(RAY_LOGS_DIR, exist_ok=True)
-os.environ["RAY_object_spilling_config"] = json.dumps(
-    {"type": "filesystem", "params": {"directory_path": SPILL_DIR}}
-)
+# Note: Object spilling config moved to ray.init() for stable API
 
 
 # ============================================================
@@ -1008,11 +1006,18 @@ if __name__ == "__main__":
     print(f"RAM: {mem.total/(1024**3):.1f} GB total, {mem.available/(1024**3):.1f} GB available")
     print("=" * 80 + "\n")
     
-    # Initialize Ray
+    # Initialize Ray (using stable APIs)
     init(
         ignore_reinit_error=True,
         include_dashboard=False,
         _temp_dir=TEMP_DIR,
+        # Object spilling using stable API (not environment variable)
+        _system_config={
+            "object_spilling_config": json.dumps({
+                "type": "filesystem",
+                "params": {"directory_path": SPILL_DIR}
+            })
+        }
     )
 
     # IMPORTANT: Store absolute path to ensure workers use same cache
@@ -1116,22 +1121,22 @@ if __name__ == "__main__":
     # ✅ 24GB RAM: Can run 2-3 envs per worker
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.1 - M4 Pro Fixed):
-    # - 6 rollout_workers: Leverage M4 Pro's multi-core performance (conservative start)
-    # - 1 env per worker: 6 parallel environments total (stable)
+    # OPTIMIZATIONS APPLIED (v19.2 - M4 Pro with NEW API):
+    # - 6 env_runners: Leverage M4 Pro's multi-core performance (conservative start)
+    # - 1 env per runner: 6 parallel environments total (stable)
     # - Larger fragments (128): Efficient data collection
     # - Batch size 3072: Large batch for stable gradients
     # - Minibatch 1024: Balanced for CPU training (no GPU on M4)
-    # - Truncate episodes: Fast iteration
     #
-    # RAY 2.50+ WITH OLD API:
-    # - Disabled new API stack (enable_rl_module_and_learner=False)
-    # - Using OLD API method names for compatibility:
-    #   * .rollouts() instead of .env_runners()
-    #   * num_rollout_workers instead of num_env_runners
-    #   * num_envs_per_worker instead of num_envs_per_env_runner
-    #   * sgd_minibatch_size instead of minibatch_size
-    #   * num_sgd_iter instead of num_epochs
+    # RAY 2.50+ NEW API (Modern Approach):
+    # - ✅ NEW env_runner API (enable_env_runner_and_connector_v2=True)
+    #   * .env_runners() method
+    #   * num_env_runners, num_envs_per_env_runner
+    #   * minibatch_size, num_epochs (NEW training param names!)
+    # - ❌ OLD learner API (enable_rl_module_and_learner=False)
+    #   * Keep our custom TorchModelV2 model (no RLModule rewrite needed)
+    #   * But MUST use NEW training param names (minibatch_size, num_epochs)
+    #   * NEW env_runner API requires NEW training names!
     #
     # EXPECTED PERFORMANCE:
     # - Total speedup: 20-30x faster than original baseline! 🚀🚀
@@ -1144,13 +1149,14 @@ if __name__ == "__main__":
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
     # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup)
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.1 (M4 Pro FIXED): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
+    # - v19.1 (M4 Pro, OLD API): 30-50s/iter, 6 workers = 50-85 mins (20-30x)
+    # - v19.2 (M4 Pro, NEW API): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
         .api_stack(
-            enable_rl_module_and_learner=False,
-            enable_env_runner_and_connector_v2=False,
+            enable_rl_module_and_learner=False,         # ❌ Keep old learner (our custom model)
+            enable_env_runner_and_connector_v2=True,    # ✅ Enable NEW env_runner API
         )
         .environment(
             env="manila_env",
@@ -1158,25 +1164,24 @@ if __name__ == "__main__":
             disable_env_checking=True
         )
         .framework("torch")
-        .rollouts(                              # ✅ OLD API method name (not env_runners)
-            num_rollout_workers=6,              # ✅ M4 Pro: 6 workers (conservative start, macOS can handle more)
+        .env_runners(                           # ✅ NEW API: env_runners() method
+            num_env_runners=6,                  # ✅ NEW API: num_env_runners (M4 Pro: 6 workers)
+            num_envs_per_env_runner=1,          # ✅ NEW API: num_envs_per_env_runner
             rollout_fragment_length=128,        # ✅ Larger fragments for efficient collection
-            batch_mode="truncate_episodes",     # ✅ Don't wait for full episodes - faster iteration
-            num_envs_per_worker=1,              # ✅ OLD API: num_envs_per_worker (not num_envs_per_env_runner)
-            # observation_filter removed - causes slowdown
+            # batch_mode removed - not needed in new API
         )
         .training(
             gamma=0.95,
             # Note: lr_schedule is deprecated in Ray 2.50+, use static lr for now
             # TODO: Implement schedule using lr callbacks if needed
             lr=5e-4,  # Starting with middle value from old schedule
-            # CRITICAL CONSTRAINT: sgd_minibatch_size <= train_batch_size ALWAYS!
+            # CRITICAL CONSTRAINT: minibatch_size <= train_batch_size ALWAYS!
             # train_batch_size = samples collected from workers
-            # sgd_minibatch_size = chunk size for gradient updates (OLD API name)
-            # num_sgd_iter = train_batch_size / sgd_minibatch_size (OLD API name)
+            # minibatch_size = chunk size for gradient updates (NEW API name)
+            # num_epochs = train_batch_size / minibatch_size (NEW API name)
             train_batch_size=3072,                     # ✅ 6 workers × 128 × 4 = 3072 samples
-            sgd_minibatch_size=1024,                   # ✅ OLD API: sgd_minibatch_size (not minibatch_size)
-            num_sgd_iter=3,                            # ✅ OLD API: num_sgd_iter = 3072 / 1024 = 3
+            minibatch_size=1024,                       # ✅ NEW API: minibatch_size
+            num_epochs=3,                              # ✅ NEW API: num_epochs = 3072 / 1024 = 3
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
