@@ -133,11 +133,20 @@ from envs.timetabling_env import ParallelTimetablingEnv
 # For memory monitoring
 import psutil
 
-# Windows-friendly Ray setup
-SPILL_DIR = "C:/ray_spill"
-TEMP_DIR = "C:/ray_temp"
+# Cross-platform Ray setup
+import platform
+if platform.system() == "Windows":
+    SPILL_DIR = "C:/ray_spill"
+    TEMP_DIR = "C:/ray_temp"
+    RAY_LOGS_DIR = "C:/ray_logs"
+else:
+    # macOS/Linux: use home directory
+    SPILL_DIR = os.path.expanduser("~/ray_spill")
+    TEMP_DIR = os.path.expanduser("~/ray_temp")
+    RAY_LOGS_DIR = os.path.expanduser("~/ray_logs")
 os.makedirs(SPILL_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(RAY_LOGS_DIR, exist_ok=True)
 os.environ["RAY_object_spilling_config"] = json.dumps(
     {"type": "filesystem", "params": {"directory_path": SPILL_DIR}}
 )
@@ -249,13 +258,18 @@ class ImprovedSahaMaskedTwoHead(TorchModelV2, nn.Module):
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
         nn.Module.__init__(self)
 
+        # DEBUG: Print full observation space details
+        print(f"\n🔍 MODEL INIT DEBUG [PID {os.getpid()}]:")
+        print(f"   obs_space type: {type(obs_space)}")
+        print(f"   obs_space: {obs_space}")
+
         # Calculate input dimension
         if hasattr(obs_space, 'spaces') and 'obs' in obs_space.spaces:
             input_dim = obs_space.spaces['obs'].shape[0]
-            print(f"\n✅ Using 'obs' dimension: {input_dim}")
+            print(f"   ✅ Using 'obs' dimension: {input_dim}")
         elif hasattr(obs_space, 'shape'):
             input_dim = obs_space.shape[0]
-            print(f"\n✅ Box observation space: {input_dim}")
+            print(f"   ✅ Box observation space: {input_dim}")
         else:
             raise ValueError(f"Cannot determine input dimension from obs_space: {obs_space}")
 
@@ -441,7 +455,7 @@ class EnhancedValidationCallback(DefaultCallbacks):
     """
     def __init__(self):
         super().__init__()
-        self.writer = SummaryWriter(log_dir="C:/ray_logs/manila_tensorboard")
+        self.writer = SummaryWriter(log_dir=os.path.join(RAY_LOGS_DIR, "manila_tensorboard"))
         self.episode_counter = 0
         self.best_placement = 0
         self.best_full_placement = 0
@@ -770,13 +784,20 @@ def make_manila_env(config=None):
     cache_file = None
     if config and isinstance(config, dict):
         cache_file = config.get('cache_file')
-    
+
     if cache_file is None:
         cache_file = find_manila_cache()
         if cache_file is None:
             raise FileNotFoundError("No Manila cache file found")
-    
+
+    # Ensure we're using absolute path
+    cache_file = os.path.abspath(cache_file)
+
     data = load_manila_data(cache_file)
+
+    # Log environment creation for debugging
+    print(f"[PID {os.getpid()}] Creating env from cache: {os.path.basename(cache_file)}")
+    print(f"[PID {os.getpid()}]   Subjects: {data['num_subjects']}, Teachers: {data['num_teachers']}")
     
     if 'subject_modalities' not in data:
         data['subject_modalities'] = ['Face-to-Face'] * data['num_subjects']
@@ -845,7 +866,9 @@ def make_manila_env(config=None):
 # ============================================================
 # CHECKPOINT FINDER (OPTIONAL)
 # ============================================================
-def find_latest_checkpoint(base_dir="C:/ray_logs"):
+def find_latest_checkpoint(base_dir=None):
+    if base_dir is None:
+        base_dir = RAY_LOGS_DIR
     """Find the most recent checkpoint in training directories"""
     
     print(f"\n{'='*80}")
@@ -959,7 +982,7 @@ if __name__ == "__main__":
     # Validation-only mode
     if args.validate_only:
         print("Running validation-only mode...")
-        test_env = make_manila_env({'cache_file': cache_file})
+        test_env = make_manila_env({'cache_file': os.path.abspath(cache_file)})
         raw = test_env.par_env
         
         test_env.reset()
@@ -987,23 +1010,38 @@ if __name__ == "__main__":
     
     # Initialize Ray
     init(
-        ignore_reinit_error=True, 
-        include_dashboard=False, 
+        ignore_reinit_error=True,
+        include_dashboard=False,
         _temp_dir=TEMP_DIR,
     )
-    
-    # Register environment
+
+    # IMPORTANT: Store absolute path to ensure workers use same cache
+    abs_cache_file = os.path.abspath(cache_file)
+    print(f"\n{'='*80}")
+    print(f"CACHE FILE (will be used by all workers):")
+    print(f"  {abs_cache_file}")
+    print(f"{'='*80}\n")
+
+    # Register environment with explicit cache file in closure
     def env_creator(config):
-        config['cache_file'] = cache_file
-        return make_manila_env(config)
-    
+        # Use cache file from config if provided, otherwise use the one from main script
+        cache_path = config.get('cache_file', abs_cache_file)
+        if not os.path.isabs(cache_path):
+            cache_path = os.path.abspath(cache_path)
+
+        print(f"[Worker {os.getpid()}] Loading environment with cache: {cache_path}")
+
+        config_copy = config.copy()
+        config_copy['cache_file'] = cache_path
+        return make_manila_env(config_copy)
+
     register_env("manila_env", env_creator)
 
     # Test environment
     print("=" * 80)
     print("VALIDATING ENVIRONMENT (v14.5)")
     print("=" * 80)
-    test_env = make_manila_env({'cache_file': cache_file})
+    test_env = make_manila_env({'cache_file': abs_cache_file})
     raw = test_env.par_env
     
     print(f"Subjects: {raw.num_subjects}")
@@ -1054,6 +1092,7 @@ if __name__ == "__main__":
                     "custom_model": "improved_saha_masked",
                     "custom_model_config": {"hidden_sizes": [512, 512, 256]},
                     "fcnet_hiddens": [],
+                    "_disable_preprocessor_api": True,  # Keep Dict observations, don't flatten
                 },
                 "lr": 5e-4,
             },
@@ -1101,47 +1140,42 @@ if __name__ == "__main__":
     # ============================================================
     ppo_cfg = (
         PPOConfig()
+        .api_stack(
+            enable_rl_module_and_learner=False,
+            enable_env_runner_and_connector_v2=False,
+        )
         .environment(
             env="manila_env",
-            env_config={'cache_file': cache_file},
+            env_config={'cache_file': abs_cache_file},
             disable_env_checking=True
         )
         .framework("torch")
-        .rollouts(
-            num_rollout_workers=2,              # ✅ WINDOWS MAXIMUM: 2 workers (3+ causes deadlocks/hangs on Windows!)
-            rollout_fragment_length=128,        # ✅ Larger fragments (was 64) - fewer blocking calls
+        .env_runners(
+            num_env_runners=1,                  # ✅ CPU-only: Use 1 worker for better stability
+            rollout_fragment_length=64,         # ✅ Smaller fragments for CPU (was 128)
             batch_mode="truncate_episodes",     # ✅ Don't wait for full episodes (was complete_episodes) - faster iteration
-            num_envs_per_worker=1,              # ✅ WINDOWS-SAFE: 1 env per worker
-            # observation_filter removed - causes initialization slowdown on Windows
+            num_envs_per_env_runner=1,          # ✅ SAFE: 1 env per worker
+            # observation_filter removed - causes initialization slowdown
         )
         .training(
             gamma=0.95,
-            lr=5e-4,
-            lr_schedule=[
-                [0, 1e-3],
-                [10000, 5e-4],
-                [50000, 2e-4],
-                [100000, 1e-4],
-            ],
-            # CRITICAL CONSTRAINT: sgd_minibatch_size <= train_batch_size ALWAYS!
+            # Note: lr_schedule is deprecated in Ray 2.50+, use static lr for now
+            # TODO: Implement schedule using lr callbacks if needed
+            lr=5e-4,  # Starting with middle value from old schedule
+            # CRITICAL CONSTRAINT: minibatch_size <= train_batch_size ALWAYS!
             # train_batch_size = samples collected from workers
-            # sgd_minibatch_size = chunk size for gradient updates
-            # num_sgd_iter = train_batch_size / sgd_minibatch_size
-            train_batch_size=2048,              # ✅ 2 workers × 128 × ~8 episodes = 2048 samples
-            sgd_minibatch_size=2048,            # ✅ GPU OPTIMIZATION: 4x larger than baseline (512 → 2048)
-            num_sgd_iter=1,                     # ✅ 2048 / 2048 = 1 iteration (single gradient pass)
+            # minibatch_size = chunk size for gradient updates
+            # num_epochs = train_batch_size / minibatch_size (renamed from num_sgd_iter in Ray 2.50+)
+            train_batch_size=256,                      # Reduced for 1 worker + CPU
+            minibatch_size=64,                         # Reduced for CPU
+            num_epochs=4,                              # 256 / 64 = 4 epochs
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
             # normalize_advantage=True,         # Not available in this RLlib version
             clip_param=0.3,
-            entropy_coeff=1.0,
-            entropy_coeff_schedule=[
-                [0, 1.0],
-                [20000, 0.5],
-                [50000, 0.2],
-                [100000, 0.05],
-            ],
+            # Note: entropy_coeff_schedule is deprecated in Ray 2.50+, use static value for now
+            entropy_coeff=0.5,  # Starting with middle value from old schedule
             grad_clip=1.0,
             kl_coeff=0.1,
             kl_target=0.01,
@@ -1149,14 +1183,13 @@ if __name__ == "__main__":
             # _enable_amp=True,                 # Mixed precision - not available in this RLlib version
         )
         .resources(
-            num_gpus=1,
+            num_gpus=0,  # Changed to 0 - no GPU available on this system
         )
         .multi_agent(
             policies=policies,
             policy_mapping_fn=policy_mapping_fn,
         )
         .callbacks(EnhancedValidationCallback)
-        .experimental(_enable_new_api_stack=False, _disable_preprocessor_api=True)
     )
 
     config = ppo_cfg.to_dict()
@@ -1218,13 +1251,13 @@ if __name__ == "__main__":
             
             # Verify environment still works with restored model
             print(f"Verifying environment compatibility...")
-            verify_env = make_manila_env({'cache_file': cache_file})
+            verify_env = make_manila_env({'cache_file': abs_cache_file})
             obs, _ = verify_env.reset()
             print(f"✅ Environment compatible with checkpoint")
             
             # Continue training manually
             target_iterations = args.iterations
-            checkpoint_dir = "C:/ray_logs/manual_checkpoints_manila_resumed"
+            checkpoint_dir = os.path.join(RAY_LOGS_DIR, "manual_checkpoints_manila_resumed")
             os.makedirs(checkpoint_dir, exist_ok=True)
             
             print(f"\n{'='*80}")
@@ -1293,7 +1326,7 @@ if __name__ == "__main__":
             
             # Run final validation
             print("\nRunning final comprehensive validation...")
-            final_env = make_manila_env({'cache_file': cache_file})
+            final_env = make_manila_env({'cache_file': abs_cache_file})
             final_env.reset()
             final_conflicts = final_env.par_env.validate_schedule()
             
@@ -1340,10 +1373,10 @@ if __name__ == "__main__":
 
         run_cfg = RunConfig(
             stop={"training_iteration": args.iterations},
-            local_dir="C:/ray_logs",
+            storage_path=RAY_LOGS_DIR,
             name="Manila_FULLY_FIXED_v18_2_with_Resume",
             checkpoint_config=CheckpointConfig(
-                checkpoint_frequency=10, 
+                checkpoint_frequency=10,
                 checkpoint_at_end=True,
             ),
             callbacks=[TBXLoggerCallback()],
@@ -1360,7 +1393,7 @@ if __name__ == "__main__":
         
         # Final comprehensive validation
         print("\nRunning final comprehensive validation with FIX #7...")
-        final_env = make_manila_env({'cache_file': cache_file})
+        final_env = make_manila_env({'cache_file': abs_cache_file})
         final_env.reset()
         final_conflicts = final_env.par_env.validate_schedule()
         
