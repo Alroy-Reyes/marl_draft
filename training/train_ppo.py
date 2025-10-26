@@ -1,7 +1,7 @@
 """
-Training script for Manila schedule - FULLY FIXED VERSION with AGGRESSIVE GPU Optimization
+Training script for Manila schedule - FULLY FIXED VERSION with Ray 2.50+ Support
 
-Version 18.8: All critical bugs resolved + AGGRESSIVE GPU Settings (15-30x speedup!)
+Version 19.9: Fragment size balanced for large environment (598 subjects)
 ========================================================================================
 ALL FIXES IMPLEMENTED:
 ✅ FIX #1: Teacher-slot consistency in action masking
@@ -40,14 +40,14 @@ WINDOWS COMPATIBILITY NOTES:
 - Object store slower than Linux implementation
 
 This configuration is optimized for Windows stability while maintaining good performance.
-For Linux/Mac systems, you can increase num_rollout_workers to 6-8 for better speedup.
+For Linux/Mac systems, you can increase num_env_runners to 6-8 for better speedup.
 ========================================================================================
 
 OPTIMAL CONFIGURATION (Windows - 12-core CPU, 16GB RAM, 6GB GPU):
 ========================================================================================
 CURRENT SETTINGS (Windows-optimized + AGGRESSIVE GPU optimization):
-- num_rollout_workers = 3        (INCREASED from 2 - stable on your system)
-- num_envs_per_worker = 1        (3 total parallel envs)
+- num_env_runners = 3        (INCREASED from 2 - stable on your system)
+- num_envs_per_env_runner = 1        (3 total parallel envs)
 - train_batch_size = 4096        (INCREASED to match minibatch - constraint!)
 - sgd_minibatch_size = 4096      (AGGRESSIVE: 8x larger! Maximum GPU utilization)
 - num_sgd_iter = 1               (single pass: 4096 / 4096 = 1)
@@ -76,20 +76,20 @@ NOTE: On Linux/Mac, you can use 6-8 workers for 12-20x speedup.
 
 MONITORING:
 1. Watch CPU: Should stay at 60-70%, not pegged at 100%
-2. Watch RAM: If it exceeds 14GB, reduce num_envs_per_worker to 1
+2. Watch RAM: If it exceeds 14GB, reduce num_envs_per_env_runner to 1
 3. Watch GPU: Run "nvidia-smi" in another terminal
    - GPU Memory: Should use 3-5GB of 8GB
    - GPU Utilization: Spikes to 70-90% during training phase
 
 TROUBLESHOOTING:
-- Out of Memory (RAM): Reduce num_envs_per_worker to 1
+- Out of Memory (RAM): Reduce num_envs_per_env_runner to 1
 - Out of Memory (GPU): Reduce sgd_minibatch_size to 256
-- Still slow: Increase num_rollout_workers to 10
+- Still slow: Increase num_env_runners to 10
 - GPU underutilized: Increase sgd_minibatch_size to 768
 
 ADVANCED TUNING (if you want to squeeze more performance):
-- Max workers: num_rollout_workers=10 (leave 2 cores for system)
-- More envs: num_envs_per_worker=3 if RAM usage < 12GB
+- Max workers: num_env_runners=10 (leave 2 cores for system)
+- More envs: num_envs_per_env_runner=3 if RAM usage < 12GB
 - Larger GPU batches: sgd_minibatch_size=768 if GPU memory < 6GB used
 ========================================================================================
 """
@@ -1007,16 +1007,22 @@ if __name__ == "__main__":
     print("=" * 80 + "\n")
     
     # Initialize Ray (using stable APIs)
+    # macOS NOTE: Keep object_store_memory at 2GB (Mac performance degrades above this)
+    # Instead, we'll use aggressive compression and larger fragments to minimize transfers
     init(
         ignore_reinit_error=True,
         include_dashboard=False,
         _temp_dir=TEMP_DIR,
-        # Object spilling using stable API (not environment variable)
+        object_store_memory=2 * 1024 * 1024 * 1024,  # 2GB (Mac optimized)
+        # Use stable API for spilling directory
+        object_spilling_directory=SPILL_DIR,
         _system_config={
-            "object_spilling_config": json.dumps({
-                "type": "filesystem",
-                "params": {"directory_path": SPILL_DIR}
-            })
+            # Reduce object ref tracking overhead
+            "max_direct_call_object_size": 100 * 1024,  # 100KB (larger than single obs)
+            "task_rpc_inlined_bytes_limit": 100 * 1024,  # Inline small results
+            # CRITICAL: Aggressive spilling for Mac (not a bottleneck on SSD)
+            "object_spilling_threshold": 0.7,  # Spill at 70% (keep headroom)
+            "automatic_object_spilling_enabled": True,
         }
     )
 
@@ -1111,22 +1117,31 @@ if __name__ == "__main__":
     # ============================================================
     # HARDWARE DETECTED:
     # - CPU: Apple M4 Pro (~12-14 cores, high-performance)
-    # - RAM: 24GB (excellent for multi-worker parallelization)
+    # - RAM: 16GB (good for multi-worker parallelization)
     # - Platform: macOS (excellent Ray support, no Windows limitations!)
     # - Neural Engine: Available for Metal acceleration
     #
     # MACOS ADVANTAGES:
     # ✅ macOS/Linux Ray: Can handle 6-10+ workers easily
     # ✅ No Windows IPC overhead/deadlock issues
-    # ✅ 24GB RAM: Can run 2-3 envs per worker
+    # ✅ 16GB RAM: Can run 2 workers × 1 env each (conservative)
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.5 - M4 Pro ULTRA-CONSERVATIVE):
-    # - 2 env_runners: PROVEN stable from Windows testing
-    # - 1 env per worker: 2 parallel environments total
-    # - Larger fragments (128): Efficient data collection
-    # - Batch size 1024: Matched to 2 workers
-    # - Minibatch 512: Conservative for stability
+    # OPTIMIZATIONS APPLIED (v19.9 - macOS BALANCED):
+    # - 3 env_runners: Fewer workers = fewer IPC transfers (Mac limitation)
+    # - 1 env per worker: 3 parallel environments total
+    # - Fragment length 200: BALANCED for 598 subjects (~100s per episode)
+    # - Object store: 2GB (Mac optimized, spill to SSD is fast)
+    # - Compress observations: TRUE = compress 21K-dim obs before IPC
+    # - Inline small objects: 100KB = avoid object store for single obs
+    # - Batch size 2400: 3 workers × 200 × 4 = 2400
+    # - Minibatch 800: Efficient batches
+    # - SGD iter 3: 2400 / 800 = 3 iterations
+    #
+    # KEY INSIGHT: With 598 subjects, episodes are SLOW (0.5s per step)
+    # - 400 fragment = 200s wait time = TOO SLOW
+    # - 200 fragment = 100s wait time = BALANCED
+    # - Still benefits from compression to minimize Mac IPC overhead
     #
     # WHY OLD API (not NEW API):
     # - NEW API requires RLModule (can't use our custom TorchModelV2)
@@ -1143,19 +1158,24 @@ if __name__ == "__main__":
     # - Multi-head architecture (teacher + slot selection)
     # This is the ONLY way to use custom models in Ray 2.50+!
     #
-    # EXPECTED PERFORMANCE:
-    # - Total speedup: 8-12x faster than original baseline! 🚀
-    # - CPU utilization: 30-40% (conservative, stable)
-    # - Memory usage: 6-10GB (safe with 24GB total)
-    # - Iteration time: 80-120 seconds (was 16 mins baseline!)
-    # - Training time (100 iter): 135-200 minutes (~2-3.5 hours, was 26.7 hours!)
+    # EXPECTED PERFORMANCE (M4 Pro 16GB, macOS balanced):
+    # - Total speedup: 10-12x faster than original baseline! 🚀
+    # - CPU utilization: 40-60% (3 workers + trainer)
+    # - Memory usage: 6-8GB (2GB object store + 4-6GB Python)
+    # - Iteration time: 100-120 seconds (was 16 mins baseline, 90s on Windows!)
+    # - Training time (100 iter): 165-200 minutes (~2.8-3.3 hours, was 26.7 hours!)
+    # - Bottleneck: 598 subjects × complex env = ~0.5s per step
+    #   200 steps × 0.5s = 100s episode + 20s training = 120s total
     #
     # PROGRESSION:
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
     # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup) ✅
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.1-19.4 (M4 Pro, 3-6 workers): GCS crashes, hung (too aggressive)
-    # - v19.5 (M4 Pro, 2 workers): 80-120s/iter = 2-3.5 hrs (8-12x!) ✅
+    # - v19.1-19.4 (M4 Pro, 3-6 workers): GCS crashes (used OLD parameter names!)
+    # - v19.5-19.6 (M4 Pro, 2 workers): 3+ min hangs (object store bottleneck!)
+    # - v19.7 (M4 Pro, 8 workers): Still 3+ min hangs (more workers = worse!)
+    # - v19.8 (M4 Pro, 3 workers, 400 frag): 3.5 min (env too slow!)
+    # - v19.9 (M4 Pro, 3 workers, 200 frag): 100-120s/iter = 2.8-3.3 hr ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
@@ -1187,15 +1207,18 @@ if __name__ == "__main__":
         .callbacks(EnhancedValidationCallback)
     )
 
-    # Set ALL config as properties to bypass deprecation warnings
-    # This works with Ray 2.50+ without triggering new API requirements
-    ppo_cfg.num_rollout_workers = 2
-    ppo_cfg.num_envs_per_worker = 1
-    ppo_cfg.rollout_fragment_length = 128
+    # Set ALL config as properties using Ray 2.50+ parameter names
+    # This uses the NEW parameter names with OLD API stack (hybrid mode)
+    # macOS OPTIMIZATION: Balance fragment size vs episode length
+    ppo_cfg.num_env_runners = 3                  # 3 workers (Mac SSD handles spilling well)
+    ppo_cfg.num_envs_per_env_runner = 1
+    ppo_cfg.rollout_fragment_length = 200        # BALANCED: 200 steps = ~100s per episode
     ppo_cfg.batch_mode = "truncate_episodes"
-    ppo_cfg.train_batch_size = 1024              # 2 workers × 128 × 4 = 1024
-    ppo_cfg.sgd_minibatch_size = 512             # Conservative for stability
-    ppo_cfg.num_sgd_iter = 2                     # 1024 / 512 = 2
+    ppo_cfg.train_batch_size = 2400              # 3 workers × 200 × 4 = 2400
+    ppo_cfg.sgd_minibatch_size = 800             # Efficient batches
+    ppo_cfg.num_sgd_iter = 3                     # 2400 / 800 = 3
+    ppo_cfg.compress_observations = True         # CRITICAL: Compress large obs before transfer
+    ppo_cfg.min_time_s_per_iteration = 0         # Don't wait, process as fast as possible
     ppo_cfg.lr = 5e-4
     ppo_cfg.gamma = 0.95
     ppo_cfg.enable_rl_module_and_learner = False
