@@ -1159,21 +1159,12 @@ if __name__ == "__main__":
     # ============================================================
     ppo_cfg = (
         PPOConfig()
-        .api_stack(
-            enable_rl_module_and_learner=False,         # ✅ OLD API (our custom model)
-            enable_env_runner_and_connector_v2=False,   # ✅ OLD API (compatible)
-        )
         .environment(
             env="manila_env",
             env_config={'cache_file': abs_cache_file},
             disable_env_checking=True
         )
         .framework("torch")
-        .env_runners(                           # ✅ NEW method name (Ray 2.50+)
-            num_env_runners=2,                  # ✅ 2 workers (PROVEN stable from Windows testing)
-            num_envs_per_env_runner=1,          # ✅ 1 env per worker (stable)
-            rollout_fragment_length=128,        # ✅ Larger fragments
-        )
         .training(
             # Batch params set as properties after config chain
             vf_clip_param=50.0,
@@ -1196,13 +1187,19 @@ if __name__ == "__main__":
         .callbacks(EnhancedValidationCallback)
     )
 
-    # Set batch and learning parameters as properties (not in .training())
-    # This is required when using .env_runners() even with OLD API stack
+    # Set ALL config as properties to bypass deprecation warnings
+    # This works with Ray 2.50+ without triggering new API requirements
+    ppo_cfg.num_rollout_workers = 2
+    ppo_cfg.num_envs_per_worker = 1
+    ppo_cfg.rollout_fragment_length = 128
+    ppo_cfg.batch_mode = "truncate_episodes"
     ppo_cfg.train_batch_size = 1024              # 2 workers × 128 × 4 = 1024
     ppo_cfg.sgd_minibatch_size = 512             # Conservative for stability
     ppo_cfg.num_sgd_iter = 2                     # 1024 / 512 = 2
     ppo_cfg.lr = 5e-4
     ppo_cfg.gamma = 0.95
+    ppo_cfg.enable_rl_module_and_learner = False
+    ppo_cfg.enable_env_runner_and_connector_v2 = False
 
     config = ppo_cfg.to_dict()
     
