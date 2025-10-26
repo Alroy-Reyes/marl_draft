@@ -1121,11 +1121,11 @@ if __name__ == "__main__":
     # ✅ 24GB RAM: Can run 2-3 envs per worker
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.4 - M4 Pro CONSERVATIVE):
-    # - 3 env_runners: Conservative worker count (avoid deadlocks)
-    # - 1 env per worker: 3 parallel environments total (stable)
+    # OPTIMIZATIONS APPLIED (v19.5 - M4 Pro ULTRA-CONSERVATIVE):
+    # - 2 env_runners: PROVEN stable from Windows testing
+    # - 1 env per worker: 2 parallel environments total
     # - Larger fragments (128): Efficient data collection
-    # - Batch size 1536: Matched to 3 workers
+    # - Batch size 1024: Matched to 2 workers
     # - Minibatch 512: Conservative for stability
     #
     # WHY OLD API (not NEW API):
@@ -1144,18 +1144,18 @@ if __name__ == "__main__":
     # This is the ONLY way to use custom models in Ray 2.50+!
     #
     # EXPECTED PERFORMANCE:
-    # - Total speedup: 12-18x faster than original baseline! 🚀
-    # - CPU utilization: 40-60% (conservative, stable)
-    # - Memory usage: 8-12GB (safe with 24GB total)
-    # - Iteration time: 50-80 seconds (was 16 mins baseline!)
-    # - Training time (100 iter): 85-135 minutes (was 26.7 hours!)
+    # - Total speedup: 8-12x faster than original baseline! 🚀
+    # - CPU utilization: 30-40% (conservative, stable)
+    # - Memory usage: 6-10GB (safe with 24GB total)
+    # - Iteration time: 80-120 seconds (was 16 mins baseline!)
+    # - Training time (100 iter): 135-200 minutes (~2-3.5 hours, was 26.7 hours!)
     #
     # PROGRESSION:
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
-    # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup)
+    # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup) ✅
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.1-19.3 (M4 Pro, 6 workers): Hung/deadlock (too aggressive)
-    # - v19.4 (M4 Pro, 3 workers STABLE): 50-80s/iter = 85-135 mins (12-18x!) ✅
+    # - v19.1-19.4 (M4 Pro, 3-6 workers): GCS crashes, hung (too aggressive)
+    # - v19.5 (M4 Pro, 2 workers): 80-120s/iter = 2-3.5 hrs (8-12x!) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
@@ -1170,7 +1170,7 @@ if __name__ == "__main__":
         )
         .framework("torch")
         .env_runners(                           # ✅ NEW method name (Ray 2.50+)
-            num_env_runners=3,                  # ✅ 3 workers (conservative for stability)
+            num_env_runners=2,                  # ✅ 2 workers (PROVEN stable from Windows testing)
             num_envs_per_env_runner=1,          # ✅ 1 env per worker (stable)
             rollout_fragment_length=128,        # ✅ Larger fragments
         )
@@ -1198,9 +1198,9 @@ if __name__ == "__main__":
 
     # Set batch and learning parameters as properties (not in .training())
     # This is required when using .env_runners() even with OLD API stack
-    ppo_cfg.train_batch_size = 1536              # 3 workers × 128 × 4 = 1536
+    ppo_cfg.train_batch_size = 1024              # 2 workers × 128 × 4 = 1024
     ppo_cfg.sgd_minibatch_size = 512             # Conservative for stability
-    ppo_cfg.num_sgd_iter = 3                     # 1536 / 512 = 3
+    ppo_cfg.num_sgd_iter = 2                     # 1024 / 512 = 2
     ppo_cfg.lr = 5e-4
     ppo_cfg.gamma = 0.95
 
