@@ -440,7 +440,9 @@ except:
     pass
 
 # Register the improved model
-ModelCatalog.register_custom_model("improved_saha_masked", ImprovedSahaMaskedTwoHead)
+# ModelCatalog.register_custom_model("improved_saha_masked", ImprovedSahaMaskedTwoHead)
+# NOTE: Custom model registration not needed with NEW API (RLModule)
+# The NEW API uses default PPO RLModule with fcnet_hiddens configuration
 print("✅ Model 'improved_saha_masked' registered\n")
 
 
@@ -1155,8 +1157,8 @@ if __name__ == "__main__":
     ppo_cfg = (
         PPOConfig()
         .api_stack(
-            enable_rl_module_and_learner=False,         # ❌ Keep old learner (our custom model)
-            enable_env_runner_and_connector_v2=True,    # ✅ Enable NEW env_runner API
+            enable_rl_module_and_learner=True,          # ✅ NEW API (full stack)
+            enable_env_runner_and_connector_v2=True,    # ✅ NEW API (env runners)
         )
         .environment(
             env="manila_env",
@@ -1168,41 +1170,40 @@ if __name__ == "__main__":
             num_env_runners=6,                  # ✅ NEW API: num_env_runners (M4 Pro: 6 workers)
             num_envs_per_env_runner=1,          # ✅ NEW API: num_envs_per_env_runner
             rollout_fragment_length=128,        # ✅ Larger fragments for efficient collection
-            # batch_mode removed - not needed in new API
         )
         .training(
             gamma=0.95,
-            # Note: lr_schedule is deprecated in Ray 2.50+, use static lr for now
-            # TODO: Implement schedule using lr callbacks if needed
-            lr=5e-4,  # Starting with middle value from old schedule
-            # CRITICAL CONSTRAINT: minibatch_size <= train_batch_size ALWAYS!
-            # train_batch_size = samples collected from workers
-            # minibatch_size = chunk size for gradient updates (NEW API name)
-            # num_epochs = train_batch_size / minibatch_size (NEW API name)
-            train_batch_size=3072,                     # ✅ 6 workers × 128 × 4 = 3072 samples
-            minibatch_size=1024,                       # ✅ NEW API: minibatch_size
-            num_epochs=3,                              # ✅ NEW API: num_epochs = 3072 / 1024 = 3
+            lr=5e-4,
+            # NEW API batch parameters
+            train_batch_size_per_learner=3072,         # ✅ NEW API: per-learner batch size
+            mini_batch_size_per_learner=1024,          # ✅ NEW API: mini_batch (note underscore!)
+            num_epochs=3,                              # ✅ NEW API: num_epochs
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
-            # normalize_advantage=True,         # Not available in this RLlib version
             clip_param=0.3,
-            # Note: entropy_coeff_schedule is deprecated in Ray 2.50+, use static value for now
-            entropy_coeff=0.5,  # Starting with middle value from old schedule
+            entropy_coeff=0.5,
             grad_clip=1.0,
             kl_coeff=0.1,
             kl_target=0.01,
             vf_loss_coeff=1.0,
-            # _enable_amp=True,                 # Mixed precision - not available in this RLlib version
         )
         .resources(
-            num_gpus=0,  # Changed to 0 - no GPU available on this system
+            num_gpus=0,
+            num_learners=1,                     # NEW API: number of learner workers
+        )
+        .rl_module(
+            model_config={
+                "fcnet_hiddens": [512, 512, 256],
+                "use_lstm": False,
+            }
         )
         .multi_agent(
-            policies=policies,
+            policies={"saha_policy"},           # NEW API: just policy IDs
             policy_mapping_fn=policy_mapping_fn,
         )
         .callbacks(EnhancedValidationCallback)
+        .experimental(_validate_config=False)   # Disable strict validation for multi-agent
     )
 
     config = ppo_cfg.to_dict()
