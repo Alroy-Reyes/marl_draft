@@ -1176,11 +1176,7 @@ if __name__ == "__main__":
             rollout_fragment_length=128,        # ✅ Larger fragments
         )
         .training(
-            gamma=0.95,
-            lr=5e-4,
-            train_batch_size=3072,              # ✅ 6 workers × 128 × 4 = 3072
-            sgd_minibatch_size=1024,            # ✅ Large minibatch for M4 Pro
-            num_sgd_iter=3,                     # ✅ 3072 / 1024 = 3
+            # Batch params set as properties after config chain
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
@@ -1200,6 +1196,14 @@ if __name__ == "__main__":
         )
         .callbacks(EnhancedValidationCallback)
     )
+
+    # Set batch and learning parameters as properties (not in .training())
+    # This is required when using .env_runners() even with OLD API stack
+    ppo_cfg.train_batch_size = 3072
+    ppo_cfg.sgd_minibatch_size = 1024
+    ppo_cfg.num_sgd_iter = 3
+    ppo_cfg.lr = 5e-4
+    ppo_cfg.gamma = 0.95
 
     config = ppo_cfg.to_dict()
     
