@@ -48,11 +48,13 @@ OPTIMAL CONFIGURATION (Windows - 12-core CPU, 16GB RAM, 6GB GPU):
 CURRENT SETTINGS (Windows-optimized + AGGRESSIVE GPU optimization):
 - num_rollout_workers = 3        (INCREASED from 2 - stable on your system)
 - num_envs_per_worker = 1        (3 total parallel envs)
-- train_batch_size = 1536        (3 workers × 128 fragment × 4)
+- train_batch_size = 4096        (INCREASED to match minibatch - constraint!)
 - sgd_minibatch_size = 4096      (AGGRESSIVE: 8x larger! Maximum GPU utilization)
-- num_sgd_iter = 1               (single pass through batch)
+- num_sgd_iter = 1               (single pass: 4096 / 4096 = 1)
 - batch_mode = truncate_episodes (don't wait for full episodes)
 - rollout_fragment_length = 128  (larger fragments, fewer blocking calls)
+
+NOTE: train_batch_size MUST be >= sgd_minibatch_size (PPO constraint)
 
 MEASURED PERFORMANCE (v18.7 with 2048 minibatch):
 - GPU Usage: 1050 MB / 6144 MB (17% - was 8% with 512)
@@ -1116,9 +1118,13 @@ if __name__ == "__main__":
                 [50000, 2e-4],
                 [100000, 1e-4],
             ],
-            train_batch_size=1536,              # ✅ INCREASED: 3 workers × 128 fragment × 4 = 1536
-            sgd_minibatch_size=4096,            # ✅ GPU OPTIMIZATION: 8x larger! (was 512, then 2048, now 4096 for max GPU usage)
-            num_sgd_iter=1,                     # ✅ Single pass through larger batch
+            # CRITICAL CONSTRAINT: sgd_minibatch_size <= train_batch_size ALWAYS!
+            # train_batch_size = samples collected from workers
+            # sgd_minibatch_size = chunk size for gradient updates
+            # num_sgd_iter = train_batch_size / sgd_minibatch_size
+            train_batch_size=4096,              # ✅ Must be >= sgd_minibatch_size
+            sgd_minibatch_size=4096,            # ✅ GPU OPTIMIZATION: Match train_batch for single pass
+            num_sgd_iter=1,                     # ✅ 4096 / 4096 = 1 iteration
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
