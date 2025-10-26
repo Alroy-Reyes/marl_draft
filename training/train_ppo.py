@@ -1174,10 +1174,10 @@ if __name__ == "__main__":
         .training(
             gamma=0.95,
             lr=5e-4,
-            # NEW API batch parameters
-            train_batch_size_per_learner=3072,         # ✅ NEW API: per-learner batch size
-            minibatch_size_per_learner=1024,           # ✅ NEW API: minibatch (NO underscore!)
-            num_epochs=3,                              # ✅ NEW API: num_epochs
+            # Batch parameters (using old names - they work with new API too!)
+            train_batch_size=3072,                     # ✅ Works with both APIs
+            sgd_minibatch_size=1024,                   # ✅ Works with both APIs
+            num_sgd_iter=3,                            # ✅ Works with both APIs
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
