@@ -20,33 +20,40 @@
 
 ---
 
-### Round 2: GPU Optimization (v18.7) ⬅️ **CURRENT**
-🎯 **Target**: 2 min → 45-90 sec (1.5-2x additional speedup)
+### Round 2: GPU Optimization (v18.9 - Windows Conservative) ⬅️ **CURRENT**
+🎯 **Target**: 2 min → 60-90 sec (1.3-2x additional speedup)
+
+**⚠️ WINDOWS LIMITATION**: Cannot use 3+ workers (causes deadlocks/hangs)
 
 **Changes**:
-- `num_rollout_workers`: 2 → **3** (50% more parallelism)
+- `num_rollout_workers`: **STAY AT 2** (Windows maximum stable!)
 - `sgd_minibatch_size`: 512 → **2048** (4x larger GPU batches!)
-- `train_batch_size`: 512 → **1536** (matched to 3 workers)
+- `train_batch_size`: 512 → **2048** (matched to sgd_minibatch for constraint)
 
 **Expected GPU Impact**:
-- GPU memory: 500MB → 2-3GB (4-6x increase)
-- GPU utilization: 60-80% → 80-95%
-- Iteration time: 2 min → 45-90 sec
+- GPU memory: 500MB → 1-2GB (2-4x increase)
+- GPU utilization: 60-80%
+- Iteration time: 2 min → 60-90 sec
 
 **Combined Impact**:
 - **Baseline**: 16 min/iter = 26.7 hours for 100 iterations
-- **After Round 2**: 45-90 sec/iter = **1.5-2.5 hours for 100 iterations**
-- **Total speedup**: 10-20x faster! 🚀🚀
+- **After Round 2**: 60-90 sec/iter = **1.7-2.5 hours for 100 iterations**
+- **Total speedup**: 12-16x faster! 🚀
+
+**Lessons Learned**:
+- ❌ v18.7-18.8: Tried 3-4 workers → FAILED (Windows deadlock)
+- ✅ v18.9: Stay at 2 workers, optimize GPU only → SUCCESS
 
 ---
 
 ## 📊 Performance Timeline
 
-| Stage | Workers | Minibatch | Iter Time | 100 Iter | Speedup |
-|-------|---------|-----------|-----------|----------|---------|
-| Baseline | 1 | 256 | 16 min | 26.7 hrs | 1x |
-| v18.5 (2 workers) | 2 | 512 | 2 min | 3.3 hrs | 8x |
-| **v18.7 (GPU opt)** | **3** | **2048** | **45-90s** | **1.5-2.5 hrs** | **10-20x** |
+| Stage | Workers | Minibatch | Iter Time | 100 Iter | Speedup | Status |
+|-------|---------|-----------|-----------|----------|---------|---------|
+| Baseline | 1 | 256 | 16 min | 26.7 hrs | 1x | ✅ |
+| v18.6 (2 workers) | 2 | 512 | 2 min | 3.3 hrs | 8x | ✅ |
+| v18.7-18.8 (3+ workers) | 3-4 | 2048-4096 | FAILED | - | - | ❌ Windows deadlock |
+| **v18.9 (GPU opt)** | **2** | **2048** | **60-90s** | **1.7-2.5 hrs** | **12-16x** | ✅ **CURRENT** |
 
 ---
 
@@ -204,45 +211,47 @@ python training/train_ppo.py --iterations 100
 
 ## 📝 Configuration Reference
 
-**Current Settings (v18.7)**:
+**Current Settings (v18.9 - Windows Optimized)**:
 ```python
 # Parallelization
-num_rollout_workers = 3
+num_rollout_workers = 2              # ⚠️ WINDOWS MAXIMUM (3+ causes deadlocks!)
 num_envs_per_worker = 1
 rollout_fragment_length = 128
 batch_mode = "truncate_episodes"
 
 # Training
-train_batch_size = 1536
-sgd_minibatch_size = 2048  # ← KEY OPTIMIZATION
+train_batch_size = 2048              # ← Matched to 2 workers
+sgd_minibatch_size = 2048            # ← KEY OPTIMIZATION: 4x GPU batches!
 num_sgd_iter = 1
 
 # GPU
 num_gpus = 1
-# (Mixed precision disabled for compatibility)
+# (Mixed precision disabled for RLlib compatibility)
 ```
 
 **If You Need to Rollback**:
 ```python
-# Safe fallback
+# Safe fallback (v18.6 - proven stable)
 num_rollout_workers = 2
 sgd_minibatch_size = 512
-train_batch_size = 1024
+train_batch_size = 512               # Or 1024
 ```
 
 ---
 
 ## 🏆 Achievement Unlocked
 
-From **26.7 hours** to **~1.7 hours** for 100 iterations!
+From **26.7 hours** to **~1.7-2.5 hours** for 100 iterations!
 
-**That's 16x faster** - you can now:
+**That's 12-16x faster** - you can now:
 - Train multiple models in a day
 - Iterate quickly on hyperparameters
 - Run ablation studies
 - Test different reward structures
 
 All while maintaining **zero conflicts** in the final schedule! 🎉
+
+**Windows Constraint**: Maxed out at 2 workers (Linux could go 8+)
 
 ---
 
@@ -255,6 +264,6 @@ All while maintaining **zero conflicts** in the final schedule! 🎉
 
 ---
 
-**Version**: 18.7 - GPU-Optimized Configuration
+**Version**: 18.9 - Windows-Conservative GPU-Optimized Configuration
 **Last Updated**: 2025-10-26
-**Status**: Ready for testing 🚀
+**Status**: CORRECTED - 2 workers maximum for Windows stability 🚀

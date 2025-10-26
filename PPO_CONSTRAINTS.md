@@ -116,41 +116,57 @@ train_batch_size = 8192  # RLlib will collect until it has 8192 samples
 
 ## 📊 Recommended Configurations
 
-### Conservative (Stable)
+### ⚠️ WINDOWS vs LINUX Differences
+
+**Windows Ray Limitations**:
+- Maximum stable workers: **2-3** (NOT 8+)
+- Ray has known IPC overhead and deadlock issues on Windows
+- Prefer WSL2 if you need >3 workers
+
+**Linux Ray**:
+- Can handle 8-10+ workers easily
+- Better performance, less overhead
+
+---
+
+### Conservative (Baseline - Windows Safe)
 ```python
-num_rollout_workers = 2
+num_rollout_workers = 2              # WINDOWS MAXIMUM STABLE
 rollout_fragment_length = 128
 train_batch_size = 1024
 sgd_minibatch_size = 512
 num_sgd_iter = 2  # 1024 / 512 = 2
 ```
 
-### Balanced (Good Performance)
+### Balanced (Windows Recommended - GPU Optimized) ⬅️ **CURRENT**
 ```python
-num_rollout_workers = 3
+num_rollout_workers = 2              # WINDOWS MAXIMUM STABLE
 rollout_fragment_length = 128
 train_batch_size = 2048
-sgd_minibatch_size = 2048
+sgd_minibatch_size = 2048            # 4x GPU optimization
 num_sgd_iter = 1  # 2048 / 2048 = 1
 ```
+**Expected**: 60-90 sec/iter, 12-16x speedup from baseline
 
-### Aggressive (Maximum GPU Utilization)
+### Aggressive (Linux Only - 3+ Workers)
 ```python
-num_rollout_workers = 3
+num_rollout_workers = 4              # ❌ NOT WINDOWS SAFE
 rollout_fragment_length = 128
 train_batch_size = 4096
 sgd_minibatch_size = 4096
 num_sgd_iter = 1  # 4096 / 4096 = 1
 ```
+**Warning**: Will hang/deadlock on Windows!
 
-### Extreme (If GPU Memory Allows)
+### Extreme (Linux + High-End GPU)
 ```python
-num_rollout_workers = 4
+num_rollout_workers = 8              # ❌ DEFINITELY NOT WINDOWS SAFE
 rollout_fragment_length = 256
 train_batch_size = 8192
 sgd_minibatch_size = 8192
 num_sgd_iter = 1  # 8192 / 8192 = 1
 ```
+**Warning**: Requires Linux and 8GB+ GPU
 
 ---
 

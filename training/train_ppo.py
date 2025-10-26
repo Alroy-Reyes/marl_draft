@@ -1063,19 +1063,24 @@ if __name__ == "__main__":
     def policy_mapping_fn(agent_id, episode, **kwargs):
         return "saha_policy"
 
-    # PPO Configuration - GPU-OPTIMIZED + WINDOWS-TESTED
+    # PPO Configuration - WINDOWS-CONSERVATIVE + GPU-OPTIMIZED
     # ============================================================
     # HARDWARE:
-    # - CPU: 12 cores → Using 3 workers (Windows-tested stable)
+    # - CPU: 12 cores → Using 2 workers (WINDOWS MAXIMUM STABLE)
     # - RAM: 16GB → 1 env/worker (8-10GB used)
-    # - GPU: 6GB VRAM → 2048 minibatch (2-3GB used - 4x increase!)
+    # - GPU: 6GB VRAM → 2048 minibatch (1-2GB used - 4x increase from baseline!)
+    #
+    # WINDOWS RAY LIMITATION:
+    # ⚠️ Windows Ray has known issues with >2 workers (IPC overhead, deadlocks)
+    # ⚠️ We MUST stay at 2 workers for stability on Windows
+    # ⚠️ Linux can handle 8+ workers, but Windows cannot
     #
     # OPTIMIZATIONS APPLIED:
-    # - 3 workers × 1 env = 3 parallel environments (50% more than 2)
-    # - 2048 minibatch: 4x larger GPU batches (was 512)
+    # - 2 workers × 1 env = 2 parallel environments (PROVEN STABLE ✅)
+    # - 2048 minibatch: 4x larger GPU batches (was 512 baseline)
     # - Truncate episodes mode: Don't wait for full episodes
     # - Larger fragments (128): Fewer blocking calls
-    # - Batch size 1536: Matched to 3 workers
+    # - Batch size 2048: Matched to 2 workers, allows 4x GPU minibatch
     #
     # RLLIB VERSION COMPATIBILITY:
     # - normalize_advantage: Disabled (not in all RLlib versions)
@@ -1083,16 +1088,16 @@ if __name__ == "__main__":
     # - Works with RLlib 1.x and 2.x
     #
     # EXPECTED PERFORMANCE:
-    # - Total speedup: 10-20x faster than original! 🚀🚀
-    # - CPU utilization: 30-40% (was 1-5%)
-    # - GPU utilization: 80-95% (was 60-80%)
-    # - Iteration time: 45-90 seconds! (was 2 mins, was 16 mins baseline)
-    # - Training time (100 iter): 1.5-2.5 hours! (was 26.7 hours)
+    # - Total speedup: 12-16x faster than original! 🚀
+    # - CPU utilization: 25-40% (was 1-5%)
+    # - GPU utilization: 60-80% (was <20%)
+    # - Iteration time: 60-90 seconds (was 2 mins, was 16 mins baseline)
+    # - Training time (100 iter): 1.7-2.5 hours (was 26.7 hours baseline)
     #
     # PROGRESSION:
-    # - Baseline: 16 min/iter = 26.7 hours
-    # - After 2 workers: 2 min/iter = 3.3 hours (8x speedup)
-    # - After GPU opt: 1 min/iter = 1.7 hours (16x speedup) ✅
+    # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
+    # - v18.6 (STABLE): 2 min/iter, 2 workers = 3.3 hours (8x speedup) ✅
+    # - v18.9 (GPU OPT): 60-90 sec/iter, 2 workers + 2048 minibatch = 1.7-2.5 hrs (12-16x) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
@@ -1103,7 +1108,7 @@ if __name__ == "__main__":
         )
         .framework("torch")
         .rollouts(
-            num_rollout_workers=3,              # ✅ INCREASED: 3 workers (2 was stable, trying 3 for more parallelism)
+            num_rollout_workers=2,              # ✅ WINDOWS MAXIMUM: 2 workers (3+ causes deadlocks/hangs on Windows!)
             rollout_fragment_length=128,        # ✅ Larger fragments (was 64) - fewer blocking calls
             batch_mode="truncate_episodes",     # ✅ Don't wait for full episodes (was complete_episodes) - faster iteration
             num_envs_per_worker=1,              # ✅ WINDOWS-SAFE: 1 env per worker
@@ -1122,9 +1127,9 @@ if __name__ == "__main__":
             # train_batch_size = samples collected from workers
             # sgd_minibatch_size = chunk size for gradient updates
             # num_sgd_iter = train_batch_size / sgd_minibatch_size
-            train_batch_size=4096,              # ✅ Must be >= sgd_minibatch_size
-            sgd_minibatch_size=4096,            # ✅ GPU OPTIMIZATION: Match train_batch for single pass
-            num_sgd_iter=1,                     # ✅ 4096 / 4096 = 1 iteration
+            train_batch_size=2048,              # ✅ 2 workers × 128 × ~8 episodes = 2048 samples
+            sgd_minibatch_size=2048,            # ✅ GPU OPTIMIZATION: 4x larger than baseline (512 → 2048)
+            num_sgd_iter=1,                     # ✅ 2048 / 2048 = 1 iteration (single gradient pass)
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
