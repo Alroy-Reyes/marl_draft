@@ -1185,7 +1185,7 @@ if __name__ == "__main__":
         )
         .resources(
             num_gpus=0,
-            num_learners=1,                     # NEW API: number of learner workers
+            # num_learners not available in this Ray version
         )
         .rl_module(
             model_config={
