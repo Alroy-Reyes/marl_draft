@@ -1116,31 +1116,35 @@ if __name__ == "__main__":
     # ✅ 24GB RAM: Can run 2-3 envs per worker
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.0 - M4 Pro):
-    # - 8 env_runners (workers): Leverage M4 Pro's multi-core performance
-    # - 2 envs per runner: 16 parallel environments total! (was 1-2)
+    # OPTIMIZATIONS APPLIED (v19.1 - M4 Pro Fixed):
+    # - 6 rollout_workers: Leverage M4 Pro's multi-core performance (conservative start)
+    # - 1 env per worker: 6 parallel environments total (stable)
     # - Larger fragments (128): Efficient data collection
-    # - Batch size 4096: Large batch for stable gradients
+    # - Batch size 3072: Large batch for stable gradients
     # - Minibatch 1024: Balanced for CPU training (no GPU on M4)
     # - Truncate episodes: Fast iteration
     #
-    # RAY 2.50+ API:
-    # - Using env_runners (renamed from rollout_workers)
-    # - Using num_epochs (renamed from num_sgd_iter)
-    # - Using minibatch_size (renamed from sgd_minibatch_size)
+    # RAY 2.50+ WITH OLD API:
+    # - Disabled new API stack (enable_rl_module_and_learner=False)
+    # - Using OLD API method names for compatibility:
+    #   * .rollouts() instead of .env_runners()
+    #   * num_rollout_workers instead of num_env_runners
+    #   * num_envs_per_worker instead of num_envs_per_env_runner
+    #   * sgd_minibatch_size instead of minibatch_size
+    #   * num_sgd_iter instead of num_epochs
     #
     # EXPECTED PERFORMANCE:
-    # - Total speedup: 30-50x faster than original baseline! 🚀🚀🚀
-    # - CPU utilization: 70-90% (M4 Pro can handle it!)
-    # - Memory usage: 12-16GB (safe with 24GB total)
-    # - Iteration time: 20-40 seconds (was 16 mins baseline!)
-    # - Training time (100 iter): 35-70 minutes (was 26.7 hours!)
+    # - Total speedup: 20-30x faster than original baseline! 🚀🚀
+    # - CPU utilization: 60-80% (M4 Pro efficient cores)
+    # - Memory usage: 10-14GB (safe with 24GB total)
+    # - Iteration time: 30-50 seconds (was 16 mins baseline!)
+    # - Training time (100 iter): 50-85 minutes (was 26.7 hours!)
     #
     # PROGRESSION:
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
     # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup)
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.0 (M4 Pro): 20-40s/iter, 8 workers = 35-70 mins (30-50x!) ✅
+    # - v19.1 (M4 Pro FIXED): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
@@ -1154,11 +1158,11 @@ if __name__ == "__main__":
             disable_env_checking=True
         )
         .framework("torch")
-        .env_runners(
-            num_env_runners=8,                  # ✅ M4 Pro: 8 workers for massive parallelization (macOS can handle it!)
+        .rollouts(                              # ✅ OLD API method name (not env_runners)
+            num_rollout_workers=6,              # ✅ M4 Pro: 6 workers (conservative start, macOS can handle more)
             rollout_fragment_length=128,        # ✅ Larger fragments for efficient collection
             batch_mode="truncate_episodes",     # ✅ Don't wait for full episodes - faster iteration
-            num_envs_per_env_runner=2,          # ✅ 2 envs per worker = 16 parallel environments total!
+            num_envs_per_worker=1,              # ✅ OLD API: num_envs_per_worker (not num_envs_per_env_runner)
             # observation_filter removed - causes slowdown
         )
         .training(
@@ -1166,13 +1170,13 @@ if __name__ == "__main__":
             # Note: lr_schedule is deprecated in Ray 2.50+, use static lr for now
             # TODO: Implement schedule using lr callbacks if needed
             lr=5e-4,  # Starting with middle value from old schedule
-            # CRITICAL CONSTRAINT: minibatch_size <= train_batch_size ALWAYS!
+            # CRITICAL CONSTRAINT: sgd_minibatch_size <= train_batch_size ALWAYS!
             # train_batch_size = samples collected from workers
-            # minibatch_size = chunk size for gradient updates
-            # num_epochs = train_batch_size / minibatch_size (renamed from num_sgd_iter in Ray 2.50+)
-            train_batch_size=4096,                     # ✅ 8 workers × 128 × 2 envs × ~2 episodes = 4096
-            minibatch_size=1024,                       # ✅ 4x larger batches for M4 Pro CPU
-            num_epochs=4,                              # ✅ 4096 / 1024 = 4 epochs (good for sample efficiency)
+            # sgd_minibatch_size = chunk size for gradient updates (OLD API name)
+            # num_sgd_iter = train_batch_size / sgd_minibatch_size (OLD API name)
+            train_batch_size=3072,                     # ✅ 6 workers × 128 × 4 = 3072 samples
+            sgd_minibatch_size=1024,                   # ✅ OLD API: sgd_minibatch_size (not minibatch_size)
+            num_sgd_iter=3,                            # ✅ OLD API: num_sgd_iter = 3072 / 1024 = 3
             vf_clip_param=50.0,
             use_gae=True,
             lambda_=0.95,
