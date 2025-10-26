@@ -1135,12 +1135,13 @@ if __name__ == "__main__":
     # - Would need custom RLModule implementation (6-8 hours work)
     # - OLD API works perfectly with our custom model RIGHT NOW
     #
-    # RAY 2.50+ OLD API (Proven & Stable):
-    # - .rollouts() method (not .env_runners())
-    # - num_rollout_workers, num_envs_per_worker
-    # - train_batch_size, sgd_minibatch_size, num_sgd_iter
+    # RAY 2.50+ HYBRID APPROACH (Best Compatibility):
+    # - OLD API stack (enable_rl_module_and_learner=False)
+    # - NEW method names (.env_runners, num_env_runners, etc.)
+    # - OLD training params (train_batch_size, sgd_minibatch_size, num_sgd_iter)
     # - Custom TorchModelV2 with action masking support
     # - Multi-head architecture (teacher + slot selection)
+    # This is the ONLY way to use custom models in Ray 2.50+!
     #
     # EXPECTED PERFORMANCE:
     # - Total speedup: 20-30x faster than original baseline! 🚀🚀
@@ -1169,11 +1170,10 @@ if __name__ == "__main__":
             disable_env_checking=True
         )
         .framework("torch")
-        .rollouts(                              # ✅ OLD API: rollouts() method
-            num_rollout_workers=6,              # ✅ 6 workers (M4 Pro optimized)
-            num_envs_per_worker=1,              # ✅ 1 env per worker (stable)
+        .env_runners(                           # ✅ NEW method name (Ray 2.50+)
+            num_env_runners=6,                  # ✅ 6 workers (M4 Pro optimized)
+            num_envs_per_env_runner=1,          # ✅ 1 env per worker (stable)
             rollout_fragment_length=128,        # ✅ Larger fragments
-            batch_mode="truncate_episodes",     # ✅ Fast iteration
         )
         .training(
             gamma=0.95,
