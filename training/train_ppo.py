@@ -1121,12 +1121,12 @@ if __name__ == "__main__":
     # ✅ 24GB RAM: Can run 2-3 envs per worker
     # ✅ M4 Pro: Extremely fast CPU, excellent for parallel rollouts
     #
-    # OPTIMIZATIONS APPLIED (v19.3 - M4 Pro with OLD API - STABLE):
-    # - 6 rollout_workers: Leverage M4 Pro's multi-core performance
-    # - 1 env per worker: 6 parallel environments total (stable)
+    # OPTIMIZATIONS APPLIED (v19.4 - M4 Pro CONSERVATIVE):
+    # - 3 env_runners: Conservative worker count (avoid deadlocks)
+    # - 1 env per worker: 3 parallel environments total (stable)
     # - Larger fragments (128): Efficient data collection
-    # - Batch size 3072: Large batch for stable gradients
-    # - Minibatch 1024: Balanced for CPU training (no GPU on M4)
+    # - Batch size 1536: Matched to 3 workers
+    # - Minibatch 512: Conservative for stability
     #
     # WHY OLD API (not NEW API):
     # - NEW API requires RLModule (can't use our custom TorchModelV2)
@@ -1144,19 +1144,18 @@ if __name__ == "__main__":
     # This is the ONLY way to use custom models in Ray 2.50+!
     #
     # EXPECTED PERFORMANCE:
-    # - Total speedup: 20-30x faster than original baseline! 🚀🚀
-    # - CPU utilization: 60-80% (M4 Pro efficient cores)
-    # - Memory usage: 10-14GB (safe with 24GB total)
-    # - Iteration time: 30-50 seconds (was 16 mins baseline!)
-    # - Training time (100 iter): 50-85 minutes (was 26.7 hours!)
+    # - Total speedup: 12-18x faster than original baseline! 🚀
+    # - CPU utilization: 40-60% (conservative, stable)
+    # - Memory usage: 8-12GB (safe with 24GB total)
+    # - Iteration time: 50-80 seconds (was 16 mins baseline!)
+    # - Training time (100 iter): 85-135 minutes (was 26.7 hours!)
     #
     # PROGRESSION:
     # - Baseline (v1): 16 min/iter, 1 worker = 26.7 hours
     # - v18.6 (Windows): 2 min/iter, 2 workers = 3.3 hours (8x speedup)
     # - v18.9 (Windows GPU): 60-90s/iter, 2 workers = 1.7-2.5 hrs (12-16x)
-    # - v19.1 (M4 Pro, OLD API first try): 30-50s/iter, 6 workers = 50-85 mins (20-30x)
-    # - v19.2 (M4 Pro, NEW API attempt): Failed (Dict obs incompatible)
-    # - v19.3 (M4 Pro, OLD API final): 30-50s/iter, 6 workers = 50-85 mins (20-30x!) ✅
+    # - v19.1-19.3 (M4 Pro, 6 workers): Hung/deadlock (too aggressive)
+    # - v19.4 (M4 Pro, 3 workers STABLE): 50-80s/iter = 85-135 mins (12-18x!) ✅
     # ============================================================
     ppo_cfg = (
         PPOConfig()
@@ -1171,7 +1170,7 @@ if __name__ == "__main__":
         )
         .framework("torch")
         .env_runners(                           # ✅ NEW method name (Ray 2.50+)
-            num_env_runners=6,                  # ✅ 6 workers (M4 Pro optimized)
+            num_env_runners=3,                  # ✅ 3 workers (conservative for stability)
             num_envs_per_env_runner=1,          # ✅ 1 env per worker (stable)
             rollout_fragment_length=128,        # ✅ Larger fragments
         )
@@ -1199,9 +1198,9 @@ if __name__ == "__main__":
 
     # Set batch and learning parameters as properties (not in .training())
     # This is required when using .env_runners() even with OLD API stack
-    ppo_cfg.train_batch_size = 3072
-    ppo_cfg.sgd_minibatch_size = 1024
-    ppo_cfg.num_sgd_iter = 3
+    ppo_cfg.train_batch_size = 1536              # 3 workers × 128 × 4 = 1536
+    ppo_cfg.sgd_minibatch_size = 512             # Conservative for stability
+    ppo_cfg.num_sgd_iter = 3                     # 1536 / 512 = 3
     ppo_cfg.lr = 5e-4
     ppo_cfg.gamma = 0.95
 
