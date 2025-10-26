@@ -1172,16 +1172,11 @@ if __name__ == "__main__":
             rollout_fragment_length=128,        # ✅ Larger fragments for efficient collection
         )
         .training(
-            gamma=0.95,
-            lr=5e-4,
-            # Batch parameters (using old names - they work with new API too!)
-            train_batch_size=3072,                     # ✅ Works with both APIs
-            sgd_minibatch_size=1024,                   # ✅ Works with both APIs
-            num_sgd_iter=3,                            # ✅ Works with both APIs
-            vf_clip_param=50.0,
+            # NEW API: batch params configured elsewhere (in base config)
             use_gae=True,
             lambda_=0.95,
             clip_param=0.3,
+            vf_clip_param=50.0,
             entropy_coeff=0.5,
             grad_clip=1.0,
             kl_coeff=0.1,
@@ -1205,6 +1200,13 @@ if __name__ == "__main__":
         .callbacks(EnhancedValidationCallback)
         .experimental(_validate_config=False)   # Disable strict validation for multi-agent
     )
+
+    # NEW API: Set batch parameters as properties (not in .training())
+    ppo_cfg.train_batch_size = 3072
+    ppo_cfg.sgd_minibatch_size = 1024
+    ppo_cfg.num_sgd_iter = 3
+    ppo_cfg.lr = 5e-4
+    ppo_cfg.gamma = 0.95
 
     config = ppo_cfg.to_dict()
     
