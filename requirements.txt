@@ -1,0 +1,107 @@
+# MARL Timetabling Framework - Python Dependencies
+# Compatible with Python 3.12+
+# Updated for Ray 2.50.1 on macOS/Linux/Windows
+
+# ============================================================
+# Core RL Framework
+# ============================================================
+ray[rllib]==2.50.1          # Distributed RL framework with RLlib
+dm-tree>=0.1.9              # Tree data structures (required by RLlib, NOT 'tree' package!)
+
+# ============================================================
+# Deep Learning
+# ============================================================
+torch>=2.9.0                # PyTorch deep learning framework
+torchvision>=0.24.0         # PyTorch vision utilities
+torchaudio>=2.9.0           # PyTorch audio utilities
+
+# ============================================================
+# Multi-Agent RL Environment
+# ============================================================
+pettingzoo>=1.25.0          # Multi-agent RL environments
+gymnasium>=1.2.0            # OpenAI Gym successor (single-agent envs)
+supersuit>=3.10.0           # PettingZoo wrappers
+
+# ============================================================
+# Scientific Computing
+# ============================================================
+numpy>=2.3.0,<2.6           # Numerical computing
+scipy>=1.16.0               # Scientific computing algorithms
+pandas>=2.3.0               # Data manipulation and analysis
+
+# ============================================================
+# Monitoring & Logging
+# ============================================================
+tensorboard>=2.20.0         # TensorBoard visualization
+tensorboardX>=2.6.0         # Extended TensorBoard support
+psutil>=5.9.0               # System and process utilities
+
+# ============================================================
+# Data I/O
+# ============================================================
+openpyxl>=3.1.0             # Excel file reading/writing
+pyarrow>=22.0.0             # Columnar data format (Ray dependency)
+
+# ============================================================
+# Performance & Compression
+# ============================================================
+lz4>=4.4.0                  # Fast compression (RLlib sample compression)
+
+# ============================================================
+# Utilities
+# ============================================================
+cloudpickle>=3.1.0          # Extended pickling support
+pyyaml>=6.0.0               # YAML parsing
+jsonschema>=4.25.0          # JSON schema validation
+click>=8.2.0                # Command-line interface creation
+
+# ============================================================
+# Optional: For distributed training (if needed)
+# ============================================================
+# ray[default]==2.50.1      # Uncomment for full Ray with dashboard
+# redis>=4.5.0              # Uncomment if using Ray cluster
+
+# ============================================================
+# Development Dependencies (Optional)
+# ============================================================
+# pytest>=7.0.0             # Testing framework
+# black>=23.0.0             # Code formatter
+# flake8>=6.0.0             # Code linter
+# mypy>=1.0.0               # Static type checker
+
+# ============================================================
+# Platform-Specific Notes
+# ============================================================
+# macOS: Uses MPS (Metal Performance Shaders) for GPU if available
+# Windows: Full CUDA support, limited to 2 rollout workers
+# Linux: Full CUDA support, can use 4-8 workers for best performance
+
+# ============================================================
+# Installation Instructions
+# ============================================================
+# 1. Create virtual environment (recommended):
+#    python3 -m venv venv
+#    source venv/bin/activate  # On Windows: venv\Scripts\activate
+#
+# 2. Install dependencies:
+#    pip install -r requirements.txt
+#
+# 3. Verify installation:
+#    python3 -c "import ray; import torch; import pettingzoo; print(' All packages installed!')"
+#
+# 4. If you encounter issues with dm-tree:
+#    pip uninstall -y tree  # Remove wrong 'tree' package if present
+#    pip install --force-reinstall dm-tree
+#
+# ============================================================
+# Version Compatibility
+# ============================================================
+# Tested with:
+# - Python 3.12.8
+# - Ray 2.50.1 (migrated from 2.9.0)
+# - PyTorch 2.9.0
+# - macOS 14.x (Apple Silicon)
+# - Windows 11 (original development platform)
+#
+# Previous versions (for reference):
+# - ray[rllib]==2.9.0  (original Windows version)

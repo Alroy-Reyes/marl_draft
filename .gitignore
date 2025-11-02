@@ -1,0 +1,396 @@
+# ============================================================
+# MARL Timetabling Project - .gitignore
+# Supports: Python, Ray/RLlib, macOS, Linux, Windows/WSL2
+# ============================================================
+
+# ============================================================
+# Python
+# ============================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ============================================================
+# Ray / RLlib Specific
+# ============================================================
+# Ray logs and checkpoints
+ray_results/
+ray_logs/
+/C:/ray_logs/
+/C:/ray_spill/
+/C:/ray_temp/
+~/ray_logs/
+~/ray_spill/
+~/ray_temp/
+
+# Ray spill directories (object storage)
+**/ray_spill/
+**/ray_temp/
+
+# RLlib checkpoints
+checkpoint_*/
+checkpoints/
+manual_checkpoints_*/
+
+# TensorBoard logs
+**/tensorboard/
+**/manila_tensorboard/
+runs/
+tb_logs/
+
+# Ray session directories
+/tmp/ray/
+**/tmp/ray/
+
+# ============================================================
+# Data Files (Project Specific)
+# ============================================================
+# Cached environment data (large pickle files)
+*.pkl
+cached_environment_data_*.pkl
+
+# Excel input files (optional - uncomment if you want to ignore them)
+# *.xlsx
+# *.xls
+
+# Generated schedules/outputs
+outputs/
+output_schedules/
+**/output_*/
+
+# Temporary data files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# ============================================================
+# IDEs and Editors
+# ============================================================
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+.idea_modules/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+.netrwhist
+tags
+[._]*.un~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================================
+# Operating Systems
+# ============================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Windows shortcuts
+*.lnk
+
+# ============================================================
+# WSL2 Specific
+# ============================================================
+# WSL interop files
+.wslconfig
+wsl.conf
+
+# Windows paths that might appear in WSL
+/mnt/c/ray_logs/
+/mnt/c/ray_spill/
+/mnt/c/ray_temp/
+
+# ============================================================
+# Git and Version Control
+# ============================================================
+# Git LFS
+.gitattributes
+
+# Backup files
+*.orig
+*.rej
+
+# ============================================================
+# Logs and Debugging
+# ============================================================
+*.log
+logs/
+*.out
+*.err
+debug.log
+error.log
+
+# Core dumps
+core
+core.*
+
+# ============================================================
+# Testing and CI/CD
+# ============================================================
+# Test outputs
+test_results/
+test-results/
+test_outputs/
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+
+# ============================================================
+# Documentation Build Artifacts
+# ============================================================
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# ============================================================
+# Miscellaneous
+# ============================================================
+# Compressed files (if you generate any)
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Security files (NEVER commit these!)
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+secrets.json
+credentials.json
+.env.local
+.env.*.local
+
+# Project-specific temporary files
+scratch/
+temp/
+tmp/
+experiments/
+
+# Large model files (if you export trained models)
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+
+# Node modules (if you use any JS tools)
+node_modules/
+package-lock.json
+yarn.lock
+
+# ============================================================
+# Project-Specific: Keep These Files
+# ============================================================
+# Important: DO NOT ignore these
+!CLAUDE.md
+!README.md
+!PPO_CONSTRAINTS.md
+!PERFORMANCE_SUMMARY.md
+!OPTIMIZATIONS.md
+!GPU_OPTIMIZATION_GUIDE.md
+!EMERGENCY_ROLLBACK.md
+!requirements.txt
+!setup.py
+!pyproject.toml
+
+# Keep example config files
+!example_config.yml
+!.env.example
+
+# Keep documentation
+!docs/
+!*.md
+
+# ============================================================
+# Custom Rules (Add your own below)
+# ============================================================
+# Add any project-specific ignore patterns here
